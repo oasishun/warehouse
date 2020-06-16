@@ -1,8 +1,8 @@
 
 #warehouse_test.py
 
-import donghun.environment.warehouse as we
-import donghun.environment.policy as p
+import warehouse as we
+import policy as p
 
 
 
