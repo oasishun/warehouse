@@ -1,6 +1,6 @@
 #policy.py
 
-import donghun.environment.warehouse as we
+import warehouse as we
 import numpy as np
 import math
 
