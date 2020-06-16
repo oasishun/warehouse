@@ -1,6 +1,6 @@
-import donghun.environment.test_warehouse as t
-import donghun.environment.warehouse as we
-import donghun.environment.policy as p
+import test_warehouse as t
+import warehouse as we
+import policy as p
 import pydot
 
 def test_warehouse_01_mcts_graph():
