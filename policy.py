@@ -31,6 +31,30 @@ class BasicPolicy:
 
 ########################################################################################################
 
+class FullSearchPolicy:
+
+    def __repr__(self):
+        return 'FullSearchPolicy'
+
+    def get_action(self, env, state):
+        orders = env.available_orders
+
+        forklift = None
+        order = None
+
+        if len(orders) > 0:
+            for f in env.forklifts:
+                if f.order == None:  # 가용한 지게차가 있는 경우
+                    forklift = f
+                    # 순서대로 선택하는 방식
+                    order = orders[0]
+                    break
+
+        return we.Action(forklift, order)
+
+
+########################################################################################################
+
 class RandomPolicy:
 
     def __repr__(self):
@@ -209,7 +233,7 @@ class Node:
             self.parent.back_propagate(reward)
 
     def recalcuate_upper_confidence_bound(self):
-        exploration_constant = 2 #적절한 수준의 값으로 조정 필요함
+        exploration_constant = 2 #적절한 수준의 값으로 조정 필요함: 2, 20
         avg = (self.total_reward / self.visits)
         deviation = math.sqrt(math.log(self.parent.visits + 1) / self.visits )
 
