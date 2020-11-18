@@ -1,10 +1,8 @@
-#policy.py
-
-import warehouse as we
 import numpy as np
+import environment as we
 import math
 
-
+########################################################################################################
 
 MAX_DISTANCE = 10**40
 
@@ -28,30 +26,6 @@ class BasicPolicy:
                     break
 
         return we.Action(forklift, order)
-
-########################################################################################################
-
-class FullSearchPolicy:
-
-    def __repr__(self):
-        return 'FullSearchPolicy'
-
-    def get_action(self, env, state):
-        orders = env.available_orders
-
-        forklift = None
-        order = None
-
-        if len(orders) > 0:
-            for f in env.forklifts:
-                if f.order == None:  # 가용한 지게차가 있는 경우
-                    forklift = f
-                    # 순서대로 선택하는 방식
-                    order = orders[0]
-                    break
-
-        return we.Action(forklift, order)
-
 
 ########################################################################################################
 
@@ -143,7 +117,7 @@ class GreedyPolicy:
 
 #######################################################################################################################
 class Node:
-    def __init__(self, root, parent, orders, order_no, forklift):
+    def __init__(self, root, parent, orders, order_no, forklift, exploration_constant=2):
 
         if root == None:
             self.root = self
@@ -164,6 +138,7 @@ class Node:
         self.total_reward = 0
         self.avg_reward = 0
         self.ucb = 0
+        self.exploration_constant = exploration_constant
 
     def __repr__(self):
         return 'depth=' + str(self.depth) + ',order_no=' + str(self.order_no)
@@ -200,6 +175,9 @@ class Node:
         else:
             #child  node들 점수 비교
             #print('compare UCB')
+            for node in self.children:
+                node.recalcuate_upper_confidence_bound()
+
             children_sorted = sorted(self.children, key=lambda x: x.ucb)
             selected_node = children_sorted[-1]
 
@@ -229,66 +207,48 @@ class Node:
         self.total_reward += reward
 
         if self.parent != None:
-            self.recalcuate_upper_confidence_bound()
+            #self.recalcuate_upper_confidence_bound()
             self.parent.back_propagate(reward)
 
     def recalcuate_upper_confidence_bound(self):
-        exploration_constant = 2 #적절한 수준의 값으로 조정 필요함: 2, 20
+        #exploration_constant = 2 #적절한 수준의 값으로 조정 필요함
+        if self.visits == 0:
+            return self.ucb
+
         avg = (self.total_reward / self.visits)
         deviation = math.sqrt(math.log(self.parent.visits + 1) / self.visits )
 
-        self.ucb = avg  + (exploration_constant * deviation)
+        self.ucb = avg  + (self.root.exploration_constant * deviation)
 
         return self.ucb
 
-    def print_node(self):
-        print(self.order_no_sequence,':v=', self.visits, ',total_reward=', self.total_reward,',avg_reward=',
-              self.get_avg_reward(),',UCB=', self.ucb)
-
-        for child in self.children:
-            child.print_node()
-
-    def get_max_reward_child(self):
-
-        max_value = self.children[0].get_avg_reward()
-        max_child = self.children[0]
-
-        for child in self.children:
-            if child.get_avg_reward() > max_value:
-                max_child = child
-                max_value = child.get_avg_reward()
-            elif child.get_avg_reward() == max_value:
-                if child.visits > max_child.visits:
-                    max_child = child
-                    max_value = child.get_avg_reward()
-
-        return max_child
 
 
 class MCTSPolicy:
-    def __init__(self):
-        self.max_iteration = 100
+    def __init__(self, max_iteration=200, exploration_constant=1.41):
+        self.max_iteration = max_iteration
         self.initial_env = None
-        self.print_node_flag = False
-        self.root = None
+        self.exploration_constant = exploration_constant
+        self.result_order = []
+        self.result_folklift = []
 
     def __repr__(self):
         return 'MCTSPolicy'
 
     def exeucte_mcts(self, env, state, forklift):
-        self.root = Node(None, None, env.available_orders, None, None)
+        root = Node(None, None, env.available_orders, None, None, exploration_constant=self.exploration_constant)
 
         if state != None:
             for order in state.order_history:
-                self.root.order_no_sequence.append(order.no)
-                self.root.remove_order_no(order.no)
+                root.order_no_sequence.append(order.no)
+                root.remove_order_no(order.no)
 
         count = 0
         while count < self.max_iteration :#(1 + 10 * (len(env.available_orders) - 1)) :
             count += 1
 
             # 1. selection & expansion
-            selected_node = self.root.select_node(forklift)
+            selected_node = root.select_node(forklift)
 
             # 2. expansion
             expanded_node = selected_node.expand_node(forklift)
@@ -300,19 +260,28 @@ class MCTSPolicy:
             expanded_node.back_propagate(reward)
 
         # root node 하위 중에 reward가 최대인 것
-        max_child = self.root.get_max_reward_child()
+        max_value = root.children[0].get_avg_reward()
+        max_child = root.children[0]
+
+        for child in root.children:
+            if child.get_avg_reward() > max_value:
+                max_child = child
+                max_value = child.get_avg_reward()
+            elif child.get_avg_reward() == max_value:
+                if child.visits > max_child.visits:
+                    max_child = child
+                    max_value = child.get_avg_reward()
+
         mcts_order = env.get_order_by_no(max_child.order_no)
+        #print('>>>>>>>>>> ORDER=', max_child.order_no, ',forklift=', forklift.no)
 
-        print('>>>>>>>>>> ORDER=', max_child.order_no, ',forklift=', forklift.no)
-
-        if self.print_node_flag:
-            self.root.print_node()
+        self.result_order.append(max_child.order_no)
+        self.result_folklift.append(forklift.no)
 
         return mcts_order
 
-
     def get_action(self, env, state):
-        if self.initial_env is None:
+        if self.initial_env == None:
             self.initial_env = env.copy()
 
         forklift = None
@@ -321,11 +290,13 @@ class MCTSPolicy:
 
         if len(env.available_orders) > 0:
             for f in env.forklifts:
-                if f.order is None:  # 가용한 지게차가 있는 경우
+                if f.order == None:  # 가용한 지게차가 있는 경우
                     forklift = f
                     copied_order = self.exeucte_mcts(self.initial_env, state, forklift)
-                    mcts_order = env.get_order_by_no(copied_order.no)
                     break
+
+        if (copied_order != None):
+            mcts_order = env.get_order_by_no(copied_order.no)
 
         return we.Action(forklift, mcts_order)
 
